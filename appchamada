@@ -1,0 +1,646 @@
+from flask import Flask, request, render_template_string, redirect
+import sqlite3
+import pandas as pd
+from datetime import datetime
+
+app = Flask(__name__)
+
+# Caminho completo para o arquivo Excel
+CAMINHO_ARQUIVO = r'C:\Users\Renanmachado\OneDrive - Real Moto Pecas Ltda\Área de Trabalho\Basecolab.xlsx'
+
+# Configuração do banco de dados
+def criar_tabela():
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chamadas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT,
+                presenca TEXT,
+                sabado_data TEXT,
+                sabado_trabalho TEXT,
+                data_registro TEXT,
+                completa BOOLEAN
+            )
+        ''')
+        conn.commit()
+
+def carregar_colaboradores():
+    try:
+        df = pd.read_excel(CAMINHO_ARQUIVO, sheet_name='Planilha1')
+        if 'Nome' in df.columns:
+            return df['Nome'].tolist()
+        elif 'nome' in df.columns:
+            return df['nome'].tolist()
+        else:
+            return "Coluna 'Nome' ou 'nome' não encontrada.", 500
+    except Exception as e:
+        return f"Erro ao carregar colaboradores: {e}"
+
+def salvar_dados_banco(dados):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.executemany('''
+            INSERT INTO chamadas (nome, presenca, sabado_data, sabado_trabalho, data_registro, completa)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', dados)
+        conn.commit()
+
+def obter_chamadas():
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT data_registro FROM chamadas ORDER BY data_registro DESC')
+        return cursor.fetchall()
+
+def obter_detalhes_chamada(data_registro):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM chamadas WHERE data_registro = ?', (data_registro,))
+        return cursor.fetchall()
+
+def obter_chamada_por_id(chamada_id):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM chamadas WHERE id = ?', (chamada_id,))
+        return cursor.fetchone()
+
+def excluir_chamada(chamada_id):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM chamadas WHERE id = ?', (chamada_id,))
+        conn.commit()
+
+@app.route('/')
+def index():
+    chamadas = obter_chamadas()
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            button {
+                padding: 10px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            table, th, td {
+                border: 1px solid black;
+            }
+            th, td {
+                padding: 8px;
+                text-align: left;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Menu Principal</h2>
+        <button onclick="window.location.href='/nova_chamada'">Nova Chamada</button>
+        <h3>Chamadas Registradas</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data de Registro</th>
+                    <th>Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for chamada in chamadas %}
+                <tr>
+                    <td>{{ chamada[0] }}</td>
+                    <td>
+                        <button onclick="window.location.href='/detalhes_chamada/{{ chamada[0] }}'">Ver Chamada</button>
+                        <button onclick="window.location.href='/excluir_chamada/{{ chamada[0] }}'">Excluir</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    '''
+    return render_template_string(html, chamadas=chamadas)
+
+@app.route('/detalhes_chamada/<data_registro>')
+def detalhes_chamada(data_registro):
+    detalhes = obter_detalhes_chamada(data_registro)
+    colaboradores = carregar_colaboradores()
+    if isinstance(colaboradores, str):
+        return f"Erro ao carregar colaboradores: {colaboradores}", 500
+
+    # Obtendo os colaboradores que já foram lançados para a data
+    colaboradores_lancados = [detalhe[1] for detalhe in detalhes]
+
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            table, th, td {
+                border: 1px solid black;
+            }
+            th, td {
+                padding: 8px;
+                text-align: left;
+            }
+            button {
+                padding: 10px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Detalhes da Chamada</h2>
+        <button onclick="window.location.href='/'">Voltar para o Menu</button>
+        <button onclick="window.location.href='/editar_chamada/{{ data_registro }}'">Editar Chamada</button>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Presença</th>
+                    <th>Data Sábado</th>
+                    <th>Sábado Trabalho</th>
+                    <th>Data Registro</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for detalhe in detalhes %}
+                <tr>
+                    <td>{{ detalhe[1] }}</td>
+                    <td>{{ detalhe[2] }}</td>
+                    <td>{{ detalhe[3] }}</td>
+                    <td>{{ detalhe[4] }}</td>
+                    <td>{{ detalhe[5] }}</td>
+                    <td>{{ detalhe[6] }}</td>
+                </tr>
+                {% endfor %}
+                {% for colaborador in colaboradores %}
+                {% if colaborador not in colaboradores_lancados %}
+                <tr>
+                    <td>{{ colaborador }}</td>
+                    <td>Não Lançado</td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                    <td>N/A</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    '''
+    return render_template_string(html, detalhes=detalhes, colaboradores=colaboradores, data_registro=data_registro)
+@app.route('/editar_colaborador/<chamada_id>/<nome>', methods=['GET', 'POST'])
+def editar_colaborador(chamada_id, nome):
+    if request.method == 'POST':
+        presenca = request.form.get('presenca')
+        sabado_data = request.form.get('sabadoData')
+        sabado_trabalho = request.form.get('sabadoTrabalho')
+
+        with sqlite3.connect('chamadas.db') as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE chamadas
+                SET presenca = ?, sabado_data = ?, sabado_trabalho = ?
+                WHERE id = ? AND nome = ?
+            ''', (presenca, sabado_data, sabado_trabalho, chamada_id, nome))
+            conn.commit()
+
+        return redirect(f'/detalhes_chamada/{request.args.get("data_registro")}')
+    
+    chamada = obter_chamada_por_id(chamada_id)
+    if chamada is None:
+        return 'Chamada não encontrada.', 404
+
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            table, th, td {
+                border: 1px solid black;
+            }
+            th, td {
+                padding: 8px;
+                text-align: left;
+            }
+            button {
+                padding: 10px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Editar Colaborador</h2>
+        <form method="post">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Presença</th>
+                        <th>Data Sábado</th>
+                        <th>Sábado Trabalho</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ nome }}</td>
+                        <td>
+                            <select name="presenca">
+                                <option value="">Selecione</option>
+                                <option value="Presente" {% if chamada[2] == 'Presente' %}selected{% endif %}>Presente</option>
+                                <option value="Ausente" {% if chamada[2] == 'Ausente' %}selected{% endif %}>Ausente</option>
+                            </select>
+                        </td>
+                        <td>
+                            <input type="date" name="sabadoData" value="{{ chamada[3] }}">
+                        </td>
+                        <td>
+                            <select name="sabadoTrabalho">
+                                <option value="">Selecione</option>
+                                <option value="Sim" {% if chamada[4] == 'Sim' %}selected{% endif %}>Sim</option>
+                                <option value="Talvez" {% if chamada[4] == 'Talvez' %}selected{% endif %}>Talvez</option>
+                                <option value="Não" {% if chamada[4] == 'Não' %}selected{% endif %}>Não</option>
+                            </select>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <button type="submit">Salvar</button>
+        </form>
+        <button onclick="window.location.href='/detalhes_chamada/{{ request.args.get('data_registro') }}'">Voltar</button>
+    </body>
+    </html>
+    '''
+    return render_template_string(html, chamada=chamada, nome=nome)
+@app.route('/excluir_colaborador/<chamada_id>/<nome>')
+def excluir_colaborador(chamada_id, nome):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM chamadas WHERE id = ? AND nome = ?', (chamada_id, nome))
+        conn.commit()
+    return redirect(f'/detalhes_chamada/{request.args.get("data_registro")}')
+@app.route('/editar_chamada/<data_registro>', methods=['GET', 'POST'])
+def editar_chamada(data_registro):
+    if request.method == 'POST':
+        colaboradores = carregar_colaboradores()
+        if isinstance(colaboradores, str):
+            return f"Erro ao carregar colaboradores: {colaboradores}", 500
+
+        dados = []
+        for i in range(len(colaboradores)):
+            presenca = request.form.get(f'presenca_{i}')
+            sabado_data = request.form.get(f'sabadoData_{i}')
+            sabado_trabalho = request.form.get(f'sabadoTrabalho_{i}')
+            id_colaborador = request.form.get(f'id_{i}')
+
+            if presenca or sabado_data or sabado_trabalho:
+                dados.append([ 
+                    colaboradores[i],
+                    presenca if presenca else "",
+                    sabado_data if sabado_data else "",
+                    sabado_trabalho if sabado_trabalho else "",
+                    data_registro,
+                    True,  # Marca como completa
+                    id_colaborador  # Inclui o ID para atualizar
+                ])
+
+        if dados:
+            with sqlite3.connect('chamadas.db') as conn:
+                cursor = conn.cursor()
+                cursor.executemany('''
+                    UPDATE chamadas
+                    SET nome = ?, presenca = ?, sabado_data = ?, sabado_trabalho = ?, data_registro = ?, completa = ?
+                    WHERE id = ?
+                ''', dados)
+                conn.commit()
+            return '''
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                    }
+                    .message {
+                        padding: 20px;
+                        background-color: #d4edda;
+                        color: #155724;
+                        border: 1px solid #c3e6cb;
+                        border-radius: 5px;
+                        margin: 20px;
+                    }
+                    button {
+                        padding: 10px;
+                        background-color: #4CAF50;
+                        color: white;
+                        border: none;
+                        cursor: pointer;
+                    }
+                    button:hover {
+                        background-color: #45a049;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="message">Chamada atualizada com sucesso!</div>
+                <button onclick="window.location.href='/'">Voltar para o Menu</button>
+            </body>
+            </html>
+            '''
+        else:
+            return 'Nenhum dado foi submetido.', 400
+
+    colaboradores = carregar_colaboradores()
+    if isinstance(colaboradores, str):
+        return f"Erro ao carregar colaboradores: {colaboradores}", 500
+
+    detalhes = obter_detalhes_chamada(data_registro)
+    colaboradores_lancados = [detalhe[1] for detalhe in detalhes]
+
+    html = '''
+   <!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        button {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h2>Editar Chamada</h2>
+    <form method="post">
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Presença</th>
+                    <th>Data Sábado</th>
+                    <th>Sábado Trabalho</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for colaborador in colaboradores %}
+                <tr>
+                    <td>{{ colaborador }}</td>
+                    <td>
+                        <select name="presenca_{{ loop.index0 }}">
+                            <option value="">Selecione</option>
+                            <option value="Presente" {% if loop.index0 < detalhes|length and detalhes[loop.index0][2] == 'Presente' %}selected{% endif %}>Presente</option>
+                            <option value="Ausente" {% if loop.index0 < detalhes|length and detalhes[loop.index0][2] == 'Ausente' %}selected{% endif %}>Ausente</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="date" name="sabadoData_{{ loop.index0 }}" value="{% if loop.index0 < detalhes|length %}{{ detalhes[loop.index0][3] }}{% endif %}">
+                    </td>
+                    <td>
+                        <select name="sabadoTrabalho_{{ loop.index0 }}">
+                            <option value="">Selecione</option>
+                            <option value="Sim" {% if loop.index0 < detalhes|length and detalhes[loop.index0][4] == 'Sim' %}selected{% endif %}>Sim</option>
+                            <option value="Talvez" {% if loop.index0 < detalhes|length and detalhes[loop.index0][4] == 'Talvez' %}selected{% endif %}>Talvez</option>
+                            <option value="Não" {% if loop.index0 < detalhes|length and detalhes[loop.index0][4] == 'Não' %}selected{% endif %}>Não</option>
+                        </select>
+                    </td>
+                    <td>
+                        {% if loop.index0 < detalhes|length %}
+                        <input type="hidden" name="id_{{ loop.index0 }}" value="{{ detalhes[loop.index0][0] }}">
+                        <button type="submit" name="action" value="excluir_{{ detalhes[loop.index0][0] }}">Excluir</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button type="submit">Salvar</button>
+    </form>
+    <button onclick="window.location.href='/'">Voltar para o Menu</button>
+</body>
+</html>
+
+    '''
+    return render_template_string(html, colaboradores=colaboradores, detalhes=detalhes, data_registro=data_registro)
+@app.route('/nova_chamada', methods=['GET', 'POST'])
+def nova_chamada():
+    if request.method == 'POST':
+        colaboradores = carregar_colaboradores()
+        if isinstance(colaboradores, str):
+            return f"Erro ao carregar colaboradores: {colaboradores}", 500
+
+        dados = []
+        data_registro = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        for i in range(len(colaboradores)):
+            presenca = request.form.get(f'presenca_{i}')
+            sabado_data = request.form.get(f'sabadoData_{i}')
+            sabado_trabalho = request.form.get(f'sabadoTrabalho_{i}')
+
+            if presenca or sabado_data or sabado_trabalho:
+                dados.append([ 
+                    colaboradores[i],
+                    presenca if presenca else "",
+                    sabado_data if sabado_data else "",
+                    sabado_trabalho if sabado_trabalho else "",
+                    data_registro,
+                    False  # Marca como incompleta
+                ])
+
+        if dados:
+            salvar_dados_banco(dados)
+            return '''
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                    }
+                    .message {
+                        padding: 20px;
+                        background-color: #d4edda;
+                        color: #155724;
+                        border: 1px solid #c3e6cb;
+                        border-radius: 5px;
+                        margin: 20px;
+                    }
+                    button {
+                        padding: 10px;
+                        background-color: #4CAF50;
+                        color: white;
+                        border: none;
+                        cursor: pointer;
+                    }
+                    button:hover {
+                        background-color: #45a049;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="message">Nova chamada registrada com sucesso!</div>
+                <button onclick="window.location.href='/'">Voltar para o Menu</button>
+            </body>
+            </html>
+            '''
+        else:
+            return 'Nenhum dado foi submetido.', 400
+
+    colaboradores = carregar_colaboradores()
+    if isinstance(colaboradores, str):
+        return f"Erro ao carregar colaboradores: {colaboradores}", 500
+
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            table, th, td {
+                border: 1px solid black;
+            }
+            th, td {
+                padding: 8px;
+                text-align: left;
+            }
+            button {
+                padding: 10px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Nova Chamada</h2>
+        <form method="post">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Presença</th>
+                        <th>Data Sábado</th>
+                        <th>Sábado Trabalho</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for colaborador in colaboradores %}
+                    <tr>
+                        <td>{{ colaborador }}</td>
+                        <td>
+                            <select name="presenca_{{ loop.index0 }}">
+                                <option value="">Selecione</option>
+                                <option value="Presente">Presente</option>
+                                <option value="Falta Injustificada">Falta Injustificada</option>
+                                <option value="Afastado">Afastado</option>
+                                <option value="Férias">Férias</option>
+                            </select>
+                        </td>
+                        <td>
+                            <input type="date" name="sabadoData_{{ loop.index0 }}">
+                        </td>
+                        <td>
+                            <select name="sabadoTrabalho_{{ loop.index0 }}">
+                                <option value="">Selecione</option>
+                                <option value="Sim">Sim</option>
+                                <option value="Talvez">Talvez</option>
+                                <option value="Não">Não</option>
+                            </select>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit">Salvar</button>
+        </form>
+        <button onclick="window.location.href='/'">Voltar para o Menu</button>
+    </body>
+    </html>
+    '''
+    return render_template_string(html, colaboradores=colaboradores)
+
+@app.route('/excluir_chamada/<data_registro>')
+def excluir_chamada(data_registro):
+    with sqlite3.connect('chamadas.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM chamadas WHERE data_registro = ?', (data_registro,))
+        conn.commit()
+    return redirect('/')
+
+if __name__ == '__main__':
+    criar_tabela()
+    app.run(debug=True)
