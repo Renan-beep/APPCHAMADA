@@ -32,8 +32,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Caminho completo para o arquivo Excel
-CAMINHO_ARQUIVO = r'C:\Users\Renanmachado\OneDrive - Real Moto Pecas Ltda\Área de Trabalho\Arquivos\app chamada\Basecolab.xlsx'
-
+CAMINHO_ARQUIVO = r'C:\Users\Renanmachado\OneDrive - Real Moto Pecas Ltda\Área de Trabalho\Arquivos\app chamada'
 # Configuração do banco de dados
 def criar_tabela():
     with sqlite3.connect('chamadas.db') as conn:
