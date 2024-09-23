@@ -1,3 +1,29 @@
+import os
+import pandas as pd
+
+# Assuming the 'Basecolab.xlsx' file is in the same directory as your 'main.py' file:
+file_path = 'Basecolab.xlsx'  # Adjust this if your file is in a different directory
+
+def carregar_colaboradores():
+    try:
+        # Load the Excel file using with statement
+        with pd.ExcelFile(file_path) as xls: 
+            df = pd.read_excel(xls, sheet_name='Planilha1')
+            # Check for the 'nome' column and return it as a list
+            if 'nome' in df.columns:
+                colaboradores = df['nome'].tolist()  # Access the 'nome' column
+                return colaboradores
+            else:
+                return "Coluna 'nome' não encontrada."
+    except Exception as e:
+        # Capture and return an error message
+        return f"Erro ao carregar colaboradores: {e}"
+
+# Call the function and store the result
+colaboradores = carregar_colaboradores()
+
+# Print the result for verification
+print(colaboradores)
 from flask import Flask, request, render_template_string, redirect
 import sqlite3
 import pandas as pd
@@ -6,7 +32,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Caminho completo para o arquivo Excel
-CAMINHO_ARQUIVO = r'C:\Users\Renanmachado\OneDrive - Real Moto Pecas Ltda\Área de Trabalho\Basecolab.xlsx'
+CAMINHO_ARQUIVO = r'C:\Users\Renanmachado\OneDrive - Real Moto Pecas Ltda\Área de Trabalho\Arquivos\app chamada\Basecolab.xlsx'
 
 # Configuração do banco de dados
 def criar_tabela():
@@ -27,7 +53,7 @@ def criar_tabela():
 
 def carregar_colaboradores():
     try:
-        df = pd.read_excel(CAMINHO_ARQUIVO, sheet_name='Planilha1')
+        df = pd.read_excel('Basecolab.xlsx', sheet_name='Planilha1')
         if 'Nome' in df.columns:
             return df['Nome'].tolist()
         elif 'nome' in df.columns:
@@ -235,7 +261,7 @@ def editar_colaborador(chamada_id, nome):
             conn.commit()
 
         return redirect(f'/detalhes_chamada/{request.args.get("data_registro")}')
-    
+
     chamada = obter_chamada_por_id(chamada_id)
     if chamada is None:
         return 'Chamada não encontrada.', 404
