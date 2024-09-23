@@ -1,5 +1,8 @@
 import os
 import pandas as pd
+git add requirements.txt
+git commit -m "Add requirements.txt"
+git push origin main
 
 # Assuming the 'Basecolab.xlsx' file is in the same directory as your 'main.py' file:
 file_path = 'Basecolab.xlsx'  # Adjust this if your file is in a different directory
